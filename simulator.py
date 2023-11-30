@@ -3,6 +3,7 @@
 import math
 import traceback
 import time
+import cv2
 import pybullet as p
 import pybullet_data as pd
 
@@ -11,6 +12,9 @@ from qibullet import NaoVirtual, NaoFsr
 from qibullet import Camera
 
 import multiprocessing as mp
+
+import threading
+import numpy as np
 
 # from teams.simple_team import SimpleTeam
 from teams.test_team import TestTeam as SimpleTeam
@@ -25,6 +29,8 @@ TEAM_B = 1
 # Camera FPS and resolution
 CAMERA_FPS = 3
 CAMERA_RESOLUTION = Camera.K_QVGA
+
+SIMULATION_FPS = 240
 
 class RoboCupSimulator:
     def __init__(self, teamClassA, teamClassB):
@@ -68,6 +74,9 @@ class RoboCupSimulator:
         # Store a list of robots
         self.robots = [None] * (NUM_PLAYERS * 2)
 
+        # Robot threads
+        self.threads = []
+
     def reset(self):
         self.ball = p.loadURDF("soccerball.urdf", basePosition=[0, 0, 0], globalScaling=0.15, physicsClientId=self.client)
 
@@ -105,6 +114,12 @@ class RoboCupSimulator:
             self.robots[i * 2] = robotA
             self.robots[i * 2 + 1] = robotB
 
+    def robotThread(self, robot):
+        while True:
+            if not robot.request_queue.empty():
+                request = robot.request_queue.get()
+                robot.handleRequest(request)
+
     def loop(self):
         try:
             self.teamA.play()
@@ -112,12 +127,17 @@ class RoboCupSimulator:
 
             prePos = p.getBasePositionAndOrientation(self.ball)[0]
 
+            self.threads = [threading.Thread(target=self.robotThread, args=(robot,)) for robot in self.robots]
+
+            for thread in self.threads:
+                thread.start()
+
             while True:
-                # Handle Robot's requests iteratively
-                for robot in self.robots:
-                    if not robot.request_queue.empty():
-                        request = robot.request_queue.get()
-                        robot.handleRequest(request)
+                # # Handle Robot's requests iteratively
+                # for robot in self.robots:
+                #     if not robot.request_queue.empty():
+                #         request = robot.request_queue.get()
+                #         robot.handleRequest(request)
 
                 curPos = p.getBasePositionAndOrientation(self.ball)[0]
                 result = self.checkGoal(curPos, prePos)
@@ -131,18 +151,36 @@ class RoboCupSimulator:
 
                 prePos = curPos
 
+                # self.manager.stepSimulation(self.client)
                 self.manager.stepSimulation(self.client)
-                time.sleep(1. / 240.)
+                
+                try:
+                    sleepTime = (1 / SIMULATION_FPS) - (time.time() - self.lastTime)
+                    # print(sleepTime)
+                    time.sleep(max(0, sleepTime))
+                except:
+                    pass
+                # # display FPS in top left corner
+                # try:
+                #     print(1. / (time.time() - self.lastTime))
+                # except:
+                #     pass
+                self.lastTime = time.time()
 
             self.printResult()
 
         except Exception as e:
             print(traceback.format_exc())
 
+            for thread in self.threads:
+                thread.join()
+
             self.teamA.stop()
             self.teamB.stop()
 
             self.manager.stopSimulation(self.client)
+
+            
 
     def checkGoal(self, cur_pos, pre_pos):
         if cur_pos[0] == pre_pos[0]:
@@ -183,10 +221,27 @@ class Robot:
         self.frame_queue = mp.Queue()
         self.sensor_queue = mp.Queue()
 
-        # self.camera_link = self.object.subscribeCamera(NaoVirtual.ID_CAMERA_BOTTOM, Camera.K_QQVGA, fps=60.0)
-        # self.current_camera = "bottom"
-        self.camera_link = None
-        self.current_camera = None
+        # # self.camera_link = self.object.subscribeCamera(NaoVirtual.ID_CAMERA_BOTTOM, Camera.K_QQVGA, fps=60.0)
+        # # self.current_camera = "bottom"
+        # self.camera_link = None
+        # self.current_camera = None
+
+        self.link_top = self.object.link_dict["CameraTop_optical_frame"]
+        self.link_bottom = self.object.link_dict["CameraBottom_optical_frame"]
+
+        self.hfov = 60.9
+        self.vfov = 47.6
+
+        self.near_plane = 0.01
+        self.far_plane = 100.
+
+        self.projection_matrix = p.computeProjectionMatrix(
+            left=-math.tan(math.pi * self.hfov / 360.0) * self.near_plane,
+            right=math.tan(math.pi * self.hfov / 360.0) * self.near_plane,
+            bottom=-math.tan(math.pi * self.vfov / 360.0) * self.near_plane,
+            top=math.tan(math.pi * self.vfov / 360.0) * self.near_plane,
+            nearVal=self.near_plane,
+            farVal=self.far_plane)
 
     def handleRequest(self, request):
         if request is None:
@@ -204,16 +259,20 @@ class Robot:
             self.object.setAngles(joint_names, joint_values, 1.0)
 
         elif request_type == "camera":
-            if value == "top" and self.current_camera != "top":
-                self.object.unsubscribeCamera(self.camera_link)
-                self.camera_link = self.object.subscribeCamera(NaoVirtual.ID_CAMERA_TOP, CAMERA_RESOLUTION, fps=CAMERA_FPS)
-                self.current_camera = "top"
-            elif value == "bottom" and self.current_camera != "bottom":
-                self.object.unsubscribeCamera(self.camera_link)
-                self.camera_link = self.object.subscribeCamera(NaoVirtual.ID_CAMERA_BOTTOM, CAMERA_RESOLUTION, fps=CAMERA_FPS)
-                self.current_camera = "bottom"
+            # if value == "top" and self.current_camera != "top":
+            #     self.object.unsubscribeCamera(self.camera_link)
+            #     self.camera_link = self.object.subscribeCamera(NaoVirtual.ID_CAMERA_TOP, CAMERA_RESOLUTION, fps=CAMERA_FPS)
+            #     self.current_camera = "top"
+            # elif value == "bottom" and self.current_camera != "bottom":
+            #     self.object.unsubscribeCamera(self.camera_link)
+            #     self.camera_link = self.object.subscribeCamera(NaoVirtual.ID_CAMERA_BOTTOM, CAMERA_RESOLUTION, fps=CAMERA_FPS)
+            #     self.current_camera = "bottom"
             
-            self.frame_queue.put(self.object.getCameraFrame(self.camera_link))
+            # self.frame_queue.put(self.object.getCameraFrame(self.camera_link))
+            if value == "top":
+                self.frame_queue.put(self.getCameraFrame(self.link_top))
+            elif value == "bottom":
+                self.frame_queue.put(self.getCameraFrame(self.link_bottom))
 
         elif request_type == "sensor":
             if value == "imu":
@@ -226,6 +285,32 @@ class Robot:
     def getImu(self):
         linear, angular = p.getBaseVelocity(self.object.robot_model)
         return (angular, linear)
+    
+    def getCameraFrame(self, link):
+        _, _, _, _, pos_world, q_world = p.getLinkState(self.object.robot_model, link.getParentIndex(), computeForwardKinematics=False)
+
+        rotation = p.getMatrixFromQuaternion(q_world)
+        forward_vector = [rotation[0], rotation[3], rotation[6]]
+        up_vector = [rotation[2], rotation[5], rotation[8]]
+
+        camera_target = [
+            pos_world[0] + forward_vector[0] * 10,
+            pos_world[1] + forward_vector[1] * 10,
+            pos_world[2] + forward_vector[2] * 10]
+
+        view_matrix = p.computeViewMatrix(pos_world, camera_target, up_vector)
+
+        frame = p.getCameraImage(
+            CAMERA_RESOLUTION.width, CAMERA_RESOLUTION.height,
+            viewMatrix=view_matrix, projectionMatrix=self.projection_matrix,
+            renderer=p.ER_BULLET_HARDWARE_OPENGL,
+            flags=p.ER_NO_SEGMENTATION_MASK,
+            projectiveTextureView=view_matrix, projectiveTextureProj=self.projection_matrix
+            )[2]
+        frame = np.reshape(frame, (CAMERA_RESOLUTION.height, CAMERA_RESOLUTION.width, 4)) # * 1. / 255.
+        frame = cv2.convertScaleAbs(frame)
+
+        return cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
 
 
 def main():

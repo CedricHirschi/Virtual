@@ -95,7 +95,6 @@ class Player:
         Available motions: Backwards, Forwards, Shoot, SideStepLeft,
                            SideStepRight, StandUpFromBack, TurnLeft, TurnRight
         """
-        print("move: {}".format(motion))
         poses = Motions.getMotion(motion)
 
         for i, (timing, pose) in enumerate(poses):

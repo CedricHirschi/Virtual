@@ -31,9 +31,6 @@ class Mover:
     def __init__(self, request_queue) -> None:
         self.speed = 1.0
         self.request_queue = request_queue
-        print("Mover initialized")
-        print(f'  Speed: {self.speed}')
-        print(f'  Queue: {self.request_queue}')
 
     def setSpeed(self, speed):
         """

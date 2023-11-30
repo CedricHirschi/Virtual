@@ -8,7 +8,6 @@ class ColorDetector:
         self.color_upper = color[1]
 
     def detect(self, img):
-        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
         img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(img_hsv, self.color_lower, self.color_upper)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)

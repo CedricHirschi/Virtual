@@ -18,7 +18,8 @@ class TestPlayer(Player):
     def __init__(self, name):
         Player.__init__(self)
         self.name = name
-        self.detector = ColorDetector((np.array([110,50,50]), np.array([130,255,255])))
+        self.detector = ColorDetector((np.array([0, 50, 50]), np.array([10, 255, 255])))
+        self.bbox = None
 
     def debug(self, string):
         print(f'[{self.name}] {string}')
@@ -30,111 +31,40 @@ class TestPlayer(Player):
         state = FIND_BALL
 
         # start camera thread
-        # self.startCamera()
-
-        # while True:
-        #     if state == self.FIND_BALL:
-        #         self.debug("FIND_BALL")
-        #         img_top = self.getCameraFrame('bottom')
-        #         img_top = cv2.cvtColor(img_top, cv2.COLOR_RGBA2BGR)
-        #         img_seg = self.segment(img_top)
-        #         bbox = self.detect(img_seg)
-        #         if bbox != None:
-        #             # img_bbox = cv2.rectangle(img_top, bbox[0:2], bbox[2:4], color = (0, 255, 255))
-        #             # cv2.imshow('bbox', img_bbox)
-        #             # cv2.waitKey(1)
-        #             state = TRACK_BALL
-        #         else:
-        #             self.move('TurnRight')
-        #     elif state == self.TRACK_BALL:
-        #         self.debug("TRACK_BALL")
-        #         img_top = self.getCameraFrame('bottom')
-        #         img_top = cv2.cvtColor(img_top, cv2.COLOR_RGBA2BGR)
-        #         img_seg = self.segment(img_top)
-        #         bbox = self.detect(img_seg)
-        #         if bbox != None:
-        #             self.debug("I see the ball")
-        #             sizex = bbox[2] - bbox[0]
-        #             sizey = bbox[3] - bbox[1]
-        #             x = (bbox[0] + bbox[2]) / 2
-        #             if x < img_top.shape[1] * 0.4:
-        #                 self.debug("TurnLeft")
-        #                 self.move('TurnLeft')
-        #             elif x > img_top.shape[1] * 0.6:
-        #                 self.debug("TurnRight")
-        #                 self.move('TurnRight')
-        #             else:
-        #                 self.debug("Forwards")
-        #                 self.move('Forwards')
-        #                 if sizey < sizex:
-        #                     self.move('Forwards')
-        #                     state = SHOOT_BALL
-        #            # cv2.imshow('bbox', img_bbox)
-        #            # cv2.waitKey(0)
-        #         else:
-        #             state = FIND_BALL
-        #     elif state == self.SHOOT_BALL:
-        #         self.debug("SHOOT_BALL")
-        #         self.move("Shoot")
-        #         state = FIND_BALL
-        # return
-        time.sleep(2)
-
-        self.mover = Mover(self.request_queue)
+        self.startCamera()
 
         while True:
-            # image = self.getCameraFrame('bottom')
-            # boundary = self.detector.detect(image)
-            # if boundary != None:
-            #     image_boundary = cv2.rectangle(image, boundary[0:2], boundary[2:4], color = (0, 255, 255))
-            #     ballPosition = self.detector.getAngle(image, Camera.K_QVGA, 0.06)
-            #     cv2.putText(image_boundary, f'{round(ballPosition[0], 2)}, {round(ballPosition[1], 2)}', (boundary[0], boundary[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 1, cv2.LINE_AA)
-            #     cv2.imshow('image', image_boundary)
-            #     cv2.waitKey(1)
-            #     self.debug("I see the ball")
-            # else:
-            #     self.debug("I dont see the ball")
-
-            self.mover.to(0.2, 0, 0)
-
-    def segment(self, img):
-        x = np.float32(img.reshape((-1,3)))
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
-        K = 6 # number of clusters
-        ret, label, center = cv2.kmeans(x,K,None,criteria,10,cv2.KMEANS_RANDOM_CENTERS)
-        center = np.uint8(center)
-        img_seg = center[label.flatten()]
-        img_seg = img_seg.reshape((img.shape))
-        return img_seg
-
-    def detect(self, img_seg):
-        # Change the color space from BGR to HSV
-        img_hsv = cv2.cvtColor(img_seg, cv2.COLOR_BGR2HSV)
-        # Define the range of HSV (Hue, Saturation, Value)
-        # lower = np.array([0, 50, 50]) # 0 degree
-        # upper = np.array([10, 255, 255]) # 20 degree
-        lower = np.array([110,50,50])
-        upper = np.array([130,255,255])
-        mask = cv2.inRange(img_hsv, lower, upper)
-
-        # print(mask.shape)
-        # print(img_seg[0][0].shape)
-
-        if np.any(mask):
-            # print("I see the ball")
-            y, x = np.where(mask)
-            bbox = [np.min(x), np.min(y), np.max(x), np.max(y)]
-
-            img_seg = cv2.cvtColor(img_seg, cv2.COLOR_BGR2RGB)
-            img_bbox = cv2.rectangle(img_seg, bbox[0:2], bbox[2:4], color = (0, 255, 255))
-
-            cv2.imshow('Marked', img_bbox)
-            cv2.waitKey(1)
-
-            return bbox
-        else:
-            # print("I dont see the ball")
-            return None
+            if state == self.FIND_BALL:
+                self.debug("FIND_BALL")
+                if self.bbox != None:
+                    state = TRACK_BALL
+                else:
+                    self.move('TurnRight')
+            elif state == self.TRACK_BALL:
+                self.debug("TRACK_BALL")
+                if self.bbox != None:
+                    self.debug("I see the ball")
+                    sizex = self.bbox[2] - self.bbox[0]
+                    sizey = self.bbox[3] - self.bbox[1]
+                    x = (self.bbox[0] + self.bbox[2]) / 2
+                    if x < self.img_size[0] * 0.4:
+                        self.debug("TurnLeft")
+                        self.move('TurnLeft')
+                    elif x > self.img_size[0] * 0.6:
+                        self.debug("TurnRight")
+                        self.move('TurnRight')
+                    else:
+                        self.debug("Forwards")
+                        self.move('Forwards')
+                        if sizey < sizex:
+                            self.move('Forwards')
+                            state = SHOOT_BALL
+                else:
+                    state = FIND_BALL
+            elif state == self.SHOOT_BALL:
+                self.debug("SHOOT_BALL")
+                self.move("Shoot")
+                state = FIND_BALL
         
     def startCamera(self):
         self.camera_thread = threading.Thread(target=self.cameraThread)
@@ -147,21 +77,22 @@ class TestPlayer(Player):
         return
     
     def cameraThread(self):
+        
         while True:
             self.show_live_image()
 
     def show_live_image(self):
         img_bot = self.getCameraFrame('bottom')
-        img_top = self.getCameraFrame('top')
+        self.img_size = img_bot.shape
 
-        # Stack vertically
-        img = np.vstack((img_top, img_bot))
+        frame = self.detector.detect(img_bot)
+        self.bbox = frame
 
-        # Show image
-        cv2.imshow('image', img)
-        # cv2.imshow('image bottom', img_bot)
+        img_framed = cv2.rectangle(img_bot, frame[0:2], frame[2:4], color = (0, 255, 255)) if frame != None else img_bot
+
+        cv2.imshow('Live image', img_framed)
         cv2.waitKey(1)
 
-        time.sleep(0.2)
+        time.sleep(0.1)
 
         return
